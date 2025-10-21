@@ -35,9 +35,9 @@
   <div class="header">
     <div>
       <h1>シード計算機</h1>
-      <div class="sub">現在のシードからNロール前後のシードを計算</div>
+      <div class="sub">現在のシードからNロール前/後のシードを計算</div>
     </div>
-    <button id="theme-toggle">追加予定</button>
+    <button id="theme-toggle">テーマ切り替え</button>
   </div>
 
   <div class="grid">
@@ -46,8 +46,20 @@
       <label>順方向計算</label>
       <label>Seed</label>
       <input id="forward-seed" type="text" value="1"/>
-      <label>ロール数 n</label>
-      <input id="forward-n" type="number" value="1" min="0"/>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <div style="flex:3">
+          <label>ロール数 n</label>
+          <input id="forward-n" type="number" value="1" min="0"/>
+        </div>
+        <div style="flex:1">
+          <label>モード</label>
+          <select id="forward-mode">
+            <option value="normal">通常</option>
+            <option value="fast">高速</option>
+            <option value="slow">低負荷</option>
+          </select>
+        </div>
+      </div>
       <div class="controls">
         <button id="btn-forward" class="primary">計算</button>
         <button id="btn-forward-copy">コピー</button>
@@ -62,8 +74,20 @@
       <label>逆方向計算</label>
       <label>Seed</label>
       <input id="back-seed" type="text" value="1"/>
-      <label>ロール数 n</label>
-      <input id="back-n" type="number" value="1" min="0"/>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <div style="flex:3">
+          <label>ロール数 n</label>
+          <input id="back-n" type="number" value="1" min="0"/>
+        </div>
+        <div style="flex:1">
+          <label>モード</label>
+          <select id="back-mode">
+            <option value="normal">通常</option>
+            <option value="fast">高速</option>
+            <option value="slow">低負荷</option>
+          </select>
+        </div>
+      </div>
       <div class="controls">
         <button id="btn-back" class="primary">計算</button>
         <button id="btn-back-copy">コピー</button>
@@ -80,11 +104,23 @@
       <input id="dist-a" type="text" value="1"/>
       <label>Seed B</label>
       <input id="dist-b" type="text" value="2"/>
-      <label>方向</label>
-      <select id="dist-dir">
-        <option value="forward">順方向</option>
-        <option value="backward">逆方向</option>
-      </select>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <div style="flex:3">
+          <label>方向</label>
+          <select id="dist-dir">
+            <option value="forward">順方向</option>
+            <option value="backward">逆方向</option>
+          </select>
+        </div>
+        <div style="flex:1">
+          <label>モード</label>
+          <select id="dist-mode">
+            <option value="normal">通常</option>
+            <option value="fast">高速</option>
+            <option value="slow">低負荷</option>
+          </select>
+        </div>
+      </div>
       <div class="controls">
         <button id="btn-dist" class="primary">探索開始</button>
         <button id="btn-dist-cancel">キャンセル</button>
@@ -128,66 +164,98 @@ function prevXorshift32(x){
   return x >>> 0;
 }
 
-// 非同期分割計算
-async function calcAsync(seed, n, fn, progressEl, textEl){
+// 共通計算関数（モード対応）
+async function calcLoop(seed, n, fn, mode, progressEl, textEl){
   seed = toU32(seed);
   const total = n*2;
-  const chunkSize = Math.max(1, Math.floor(total/1000));
   let current = seed;
-  for(let i=0;i<total;i++){
-    current = fn(current);
-    if(i%chunkSize===0){
-      let percent = ((i+1)/total*100);
+
+  if(mode==='fast'){
+    // 高速（負荷大）
+    for(let i=0;i<total;i++) current = fn(current);
+    progressEl.value = 100;
+    textEl.textContent = `進行: 100.00%`;
+    return current;
+  } 
+  else if(mode==='normal'){
+    // 現行モード（標準）
+    const chunk = Math.max(1, Math.floor(total/1000));
+    for(let i=0;i<total;i++){
+      current = fn(current);
+      if(i%chunk===0){
+        const percent = (i+1)/total*100;
+        progressEl.value = percent;
+        textEl.textContent = `進行: ${percent.toFixed(2)}%`;
+        await new Promise(r=>setTimeout(r,0));
+      }
+    }
+    progressEl.value = 100;
+    textEl.textContent = `進行: 100.00%`;
+    return current;
+  }
+  else {
+    // 低負荷（遅い）
+    for(let i=0;i<total;i++){
+      current = fn(current);
+      const percent = (i+1)/total*100;
       progressEl.value = percent;
       textEl.textContent = `進行: ${percent.toFixed(2)}%`;
       await new Promise(r=>setTimeout(r,0));
     }
+    progressEl.value = 100;
+    textEl.textContent = `進行: 100.00%`;
+    return current;
   }
-  progressEl.value = 100;
-  textEl.textContent = `進行: 100.00%`;
-  return current;
 }
 
-// 順方向
+// -------------------- 順方向 --------------------
 document.getElementById('btn-forward').addEventListener('click',async()=>{
   let seed = toU32(document.getElementById('forward-seed').value);
   let n = Math.floor(document.getElementById('forward-n').value);
+  let mode = document.getElementById('forward-mode').value;
   if(!isValidSeed(seed)||n<0){ alert('入力エラー'); return; }
+
   const out = document.getElementById('forward-out');
   const progText = document.getElementById('forward-progress-text');
   const prog = document.getElementById('forward-progress');
   out.textContent='計算中...';
-  let res = await calcAsync(seed,n,xorshift32,prog,progText);
+  let res = await calcLoop(seed,n,xorshift32,mode,prog,progText);
   out.textContent = `結果: ${res}`;
 });
+
 document.getElementById('btn-forward-copy').addEventListener('click',async()=>{
   const txt = document.getElementById('forward-out').textContent.replace(/^結果:\s*/,'');
   await navigator.clipboard.writeText(txt).catch(()=>{alert('コピー失敗')});
 });
 
-// 逆方向
+// -------------------- 逆方向 --------------------
 document.getElementById('btn-back').addEventListener('click',async()=>{
   let seed = toU32(document.getElementById('back-seed').value);
   let n = Math.floor(document.getElementById('back-n').value);
+  let mode = document.getElementById('back-mode').value;
   if(!isValidSeed(seed)||n<0){ alert('入力エラー'); return; }
+
   const out = document.getElementById('back-out');
   const progText = document.getElementById('back-progress-text');
   const prog = document.getElementById('back-progress');
   out.textContent='計算中...';
-  let res = await calcAsync(seed,n,prevXorshift32,prog,progText);
+  let res = await calcLoop(seed,n,prevXorshift32,mode,prog,progText);
   out.textContent = `結果: ${res}`;
 });
+
 document.getElementById('btn-back-copy').addEventListener('click',async()=>{
   const txt = document.getElementById('back-out').textContent.replace(/^結果:\s*/,'');
   await navigator.clipboard.writeText(txt).catch(()=>{alert('コピー失敗')});
 });
 
-// 探索 (SeedA → SeedB)
+// -------------------- 探索 --------------------
 document.getElementById('btn-dist').addEventListener('click',async()=>{
   let a = toU32(document.getElementById('dist-a').value);
   let b = toU32(document.getElementById('dist-b').value);
   let dir = document.getElementById('dist-dir').value;
+  let mode = document.getElementById('dist-mode').value;
   if(!isValidSeed(a)||!isValidSeed(b)){ alert('入力エラー'); return; }
+
   const out = document.getElementById('dist-out');
   const prog = document.getElementById('dist-progress');
   const percent = document.getElementById('dist-percent');
@@ -197,31 +265,66 @@ document.getElementById('btn-dist').addEventListener('click',async()=>{
 
   let current = a;
   const total = 0x100000000; // 2^32
-  const chunk = 500000;
   let steps = 0;
   let fn = dir==='forward'? xorshift32 : prevXorshift32;
+
+  // モードに応じたチャンク調整
+  let chunk = 0;
+  if(mode==='fast') chunk = 0xFFFFFFFF; // 一気に回す
+  else if(mode==='normal') chunk = 500000;
+  else chunk = 10000; // lowは小さい分割で低負荷
+
   while(steps<total){
     if(distCancel) { out.textContent='キャンセル'; break;}
     for(let i=0;i<chunk && steps<total;i++){
       current = fn(current); steps++;
-      if(current===b){ out.textContent=`到達! 距離: ${steps/2}ロール`; prog.value=100; percent.textContent='100.00'; return;}
+      if(current===b){
+        out.textContent=`到達! 距離: ${Math.floor(steps/2)}ロール`;
+        prog.value=100; percent.textContent='100.00';
+        return;
+      }
     }
     let p = steps/total*100;
     prog.value=p; percent.textContent=p.toFixed(2);
-    await new Promise(r=>setTimeout(r,0));
+    if(mode!=='fast') await new Promise(r=>setTimeout(r,0));
   }
   if(current!==b) out.textContent='到達できません';
 });
+
 document.getElementById('btn-dist-cancel').addEventListener('click',()=>{distCancel=true;});
 document.getElementById('btn-dist-copy').addEventListener('click',async()=>{
   const txt = document.getElementById('dist-out').textContent.replace(/^結果:\s*/,'');
   await navigator.clipboard.writeText(txt).catch(()=>{alert('コピー失敗')});
 });
 
-// テーマ切替
-document.getElementById('theme-toggle').addEventListener('click',()=>{
-  document.body.classList.toggle('dark');
-  alert('テーマ切替しました'); // ダミー。詳細色変更も可能
+// -------------------- テーマ切替 --------------------
+document.getElementById('theme-toggle').addEventListener('click', () => {
+  const root = document.documentElement;
+  const dark = getComputedStyle(root).getPropertyValue('--bg').trim() === '#0b1220';
+  const body = document.body;
+  const inputs = document.querySelectorAll('input, select');
+
+  if (dark) {
+    root.style.setProperty('--bg', '#f5f7fb');
+    root.style.setProperty('--card', '#ffffff');
+    root.style.setProperty('--text', '#0b1220');
+    root.style.setProperty('--muted', '#555');
+    root.style.setProperty('--accent', '#2563eb');
+    body.style.background = 'linear-gradient(180deg, #f5f7fb 0%, #dbeafe 60%)';
+    document.getElementById('theme-toggle').textContent = 'ライトモード中';
+    inputs.forEach(el => { el.style.background = '#f0f4ff'; el.style.color='#0b1220'; el.style.borderColor='rgba(0,0,0,0.1)'; });
+    document.querySelectorAll('.card').forEach(c => { c.style.background='#ffffff'; c.style.color='#0b1220'; });
+  } else {
+    root.style.setProperty('--bg', '#0b1220');
+    root.style.setProperty('--card', '#071427');
+    root.style.setProperty('--text', '#e6f0fb');
+    root.style.setProperty('--muted', '#9fb0c8');
+    root.style.setProperty('--accent', '#3b82f6');
+    body.style.background = 'linear-gradient(180deg, #051026 0%, #081428 60%)';
+    document.getElementById('theme-toggle').textContent = 'ダークモード中';
+    inputs.forEach(el => { el.style.background = '#061429'; el.style.color='#e6f0fb'; el.style.borderColor='rgba(255,255,255,0.04)'; });
+    document.querySelectorAll('.card').forEach(c => { c.style.background='#071427'; c.style.color='#e6f0fb'; });
+  }
 });
 </script>
 </body>
