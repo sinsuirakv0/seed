@@ -204,7 +204,7 @@ document.getElementById('btn-dist').addEventListener('click',async()=>{
     if(distCancel) { out.textContent='キャンセル'; break;}
     for(let i=0;i<chunk && steps<total;i++){
       current = fn(current); steps++;
-      if(current===b){ out.textContent=`到達! 距離: ${steps/2}`; prog.value=100; percent.textContent='100.00'; return;}
+      if(current===b){ out.textContent=`到達! 距離: ${steps/2}ロール`; prog.value=100; percent.textContent='100.00'; return;}
     }
     let p = steps/total*100;
     prog.value=p; percent.textContent=p.toFixed(2);
